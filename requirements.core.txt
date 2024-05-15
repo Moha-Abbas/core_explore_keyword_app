@@ -1,2 +1,2 @@
 core-main-app==2.9.*
-core-explore-common-app==2.9.*
+core-explore-common-app @ git+https://github.com/Moha-Abbas/core_explore_common_app.git@master

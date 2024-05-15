@@ -1,44 +1,47 @@
-{% if data.search_form.global_templates|length > 0 or data.search_form.user_templates|length > 0 %}
 {% if data.search_form.global_templates|length > 0 %}
-<div class="card">
-    <div class="card-header">
-        <div class="row row-template">
-            <div class="col-md-8 col-template">
-                Filter by Template
-            </div>
-            <div class="{% if BOOTSTRAP_VERSION|first == "4" %}pl-0{% elif BOOTSTRAP_VERSION|first == "5"  %}ps-0{% endif %} col-md-4 col-template">
-                <div class="{% if BOOTSTRAP_VERSION|first == "4" %}float-right{% elif BOOTSTRAP_VERSION|first == "5"  %}float-end{% endif %}">
-                    <a class="selectAllGlobalTemplateButton" href="javascript:void(0)">
-                        Select All
-                    </a>
-                </div>
-            </div>
-        </div>
+<div class="ek-filter-card">
+    <div class="ek-filter-card-header">
+        <span class="ek-filter-card-title">Filter by Test</span>
+        <a class="selectAllGlobalTemplateButton ek-filter-action" href="javascript:void(0)">
+            Select All
+        </a>
     </div>
-</div>
-<div class="list-group-item">
-    {{ data.search_form.global_templates }}
+    <div class="ek-filter-card-body">
+        {{ data.search_form.global_templates }}
+    </div>
 </div>
 {% endif %}
+
 {% if data.search_form.user_templates|length > 0 %}
-<div class="card">
-    <div class="card-header">
-        <div class="row row-template">
-            <div class="col-md-9 col-template">
-                Filter by User Template
-            </div>
-            <div class="{% if BOOTSTRAP_VERSION|first == "4" %}pl-0{% elif BOOTSTRAP_VERSION|first == "5"  %}ps-0{% endif %} col-md-3 col-template">
-                <div class="{% if BOOTSTRAP_VERSION|first == "4" %}float-right{% elif BOOTSTRAP_VERSION|first == "5"  %}float-end{% endif %}">
-                    <a class="selectAllUserTemplateButton" href="javascript:void(0)">
-                        Select All
-                    </a>
-                </div>
-            </div>
-        </div>
+<div class="ek-filter-card">
+    <div class="ek-filter-card-header">
+        <span class="ek-filter-card-title">Filter by User Template</span>
+        <a class="selectAllUserTemplateButton ek-filter-action" href="javascript:void(0)">
+            Select All
+        </a>
+    </div>
+    <div class="ek-filter-card-body">
+        {{ data.search_form.user_templates }}
     </div>
 </div>
-<div class="list-group-item">
-    {{ data.search_form.user_templates }}
+{% endif %}
+
+{% if data.accessible_workspaces|length > 0 %}
+<div class="ek-filter-card">
+    <div class="ek-filter-card-header">
+        <span class="ek-filter-card-title">Filter by Workspace</span>
+        <button type="button" class="ek-filter-action ek-ws-clear-all" id="ek-workspace-clear">
+            Clear all
+        </button>
+    </div>
+    <div class="ek-filter-card-body">
+        <div class="ek-ws-tag-input" id="ek-workspace-tags">
+            <div class="ek-ws-tag-chips" id="ek-workspace-chips"></div>
+            <input type="text" id="ek-workspace-search" placeholder="Search workspaces…" autocomplete="off">
+            <div class="ek-ws-tag-dropdown" id="ek-workspace-options" style="display:none;"></div>
+        </div>
+        {{ data.search_form.workspaces }}
+        <script type="application/json" id="ek-workspace-data">{{ data.accessible_workspaces_json|safe }}</script>
+    </div>
 </div>
-    {% endif %}
 {% endif %}

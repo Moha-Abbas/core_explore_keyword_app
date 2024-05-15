@@ -1,14 +1,16 @@
-<div class="w-100 d-flex">
-    <div class="search-bar-wrapper" data-stretchy-filter=".tagit-hidden-field, .ui-widget-content" id="search_bar" async>
-        {{data.search_form.keywords}}
-        {{data.search_form.query_id}}
-        {{data.search_form.user_id}}
-        {{data.search_form.order_by_field}}
-        {%if data.error%}<div class="text-danger">{{data.error}}</div>{% endif %}
-    </div>
-    <div class="{% if BOOTSTRAP_VERSION|first == "4" %}ml-3{% elif BOOTSTRAP_VERSION|first == "5"  %}ms-3{% endif %}" id="search_btn">
-        <button type="submit" value="Search" class="button primary search_button" >
-            Search
-        </button>
+<div class="w-100">
+    <div class="w-100 d-flex">
+        <div class="search-bar-wrapper" data-stretchy-filter=".tagit-hidden-field, .ui-widget-content" id="search_bar" async>
+            {{data.search_form.keywords}}
+            {{data.search_form.query_id}}
+            {{data.search_form.user_id}}
+            {{data.search_form.order_by_field}}
+            {%if data.error%}<div class="text-danger">{{data.error}}</div>{% endif %}
+        </div>
+        <div class="{% if BOOTSTRAP_VERSION|first == "4" %}ml-3{% elif BOOTSTRAP_VERSION|first == "5"  %}ms-3{% endif %}" id="search_btn">
+            <button type="submit" value="Search" class="button primary search_button" >
+                Search
+            </button>
+        </div>
     </div>
 </div>

@@ -19,14 +19,17 @@ class KeywordForm(forms.Form):
     query_id = forms.CharField(widget=forms.HiddenInput())
     user_id = forms.CharField(widget=forms.HiddenInput())
     global_templates = forms.MultipleChoiceField(
-        widget=forms.CheckboxSelectMultiple(), required=False
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "ek-pill-list"}),
+        required=False,
     )
     user_templates = forms.MultipleChoiceField(
-        widget=forms.CheckboxSelectMultiple(), required=False
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "ek-pill-list"}),
+        required=False,
     )
     order_by_field = forms.CharField(
         required=False, widget=forms.HiddenInput()
     )
+    workspaces = forms.CharField(required=False, widget=forms.HiddenInput())
 
     def __init__(self, *args, **kwargs):
         """Init Keyword form"""

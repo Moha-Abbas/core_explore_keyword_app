@@ -9,6 +9,7 @@ from django.utils.decorators import method_decorator
 
 import core_explore_keyword_app.components.persistent_query_keyword.api as persistent_query_keyword_api
 import core_main_app.components.template_version_manager.api as template_version_manager_api
+import core_main_app.components.workspace.api as workspace_api
 from core_explore_common_app.components.query import api as query_api
 from core_explore_common_app.settings import DEFAULT_DATE_TOGGLE_VALUE
 from core_explore_common_app.views.user.views import (
@@ -21,6 +22,10 @@ from core_explore_keyword_app.components.persistent_query_keyword.models import 
 from core_explore_keyword_app.forms import KeywordForm
 from core_explore_keyword_app.permissions import rights
 from core_explore_keyword_app.settings import EXPLORE_KEYWORD_APP_EXTRAS
+from core_explore_keyword_app.utils.keywords import (
+    build_keyword_query,
+    get_keywords_from_keyword_query,
+)
 from core_explore_keyword_app.utils.search_operators import (
     build_search_operator_query,
     get_keywords_from_search_operator_query,
@@ -30,6 +35,42 @@ from core_main_app.components.template import api as template_api
 from core_main_app.settings import DATA_SORTING_FIELDS
 from core_main_app.utils import decorators
 from core_main_app.utils.rendering import render
+
+
+def _get_accessible_workspaces(user):
+    """Workspaces the user can read or write, used to populate the
+    "Filter by Workspace" control.
+
+    Args:
+        user:
+
+    Returns:
+    """
+    read_ws = list(
+        workspace_api.get_all_workspaces_with_read_access_by_user(user)
+    )
+    write_ws = list(
+        workspace_api.get_all_workspaces_with_write_access_by_user(user)
+    )
+    merged = read_ws + [ws for ws in write_ws if ws not in read_ws]
+    workspaces = [
+        {"id": ws.id, "title": ws.title, "is_public": ws.is_public}
+        for ws in merged
+    ]
+    # Pseudo-entry for records with no workspace assigned at all. "None" is
+    # the exact sentinel QueryBuilder.add_list_criteria already recognizes
+    # and turns into a real None in the $in list - no new query logic
+    # needed, just this one extra choice in the selector.
+    workspaces.insert(
+        0,
+        {
+            "id": "None",
+            "title": "No Workspace",
+            "is_public": False,
+            "is_pseudo": True,
+        },
+    )
+    return workspaces
 
 
 class KeywordSearchView(ResultsView):
@@ -57,7 +98,7 @@ class KeywordSearchView(ResultsView):
 
         # assets / modals / forms
         context = self._get(request, query_id)
-        context.update({"page_title": "Search By Keyword"})
+        context.update({"page_title": "Database"})
 
         return render(
             request,
@@ -109,29 +150,25 @@ class KeywordSearchView(ResultsView):
 
     @staticmethod
     def _parse_query(query_content):
-        keyword_list = list()
         query_json = json.loads(query_content)
 
-        if "$text" in query_json:
-            keywords = query_json["$text"]["$search"]
-            keyword_list = [
-                "{}".format(keyword)
-                for keyword in keywords.split('"')
-                if keyword not in ("", " ")
+        if "$and" in query_json:
+            # parse all the sub_queries
+            parsed_sub_queries = [
+                KeywordSearchView._parse_query(json.dumps(sub_query))
+                for sub_query in query_json["$and"]
             ]
 
-        if "$and" in query_json:
-            result = []
+            return ",".join(
+                parsed_sub_query
+                for parsed_sub_query in parsed_sub_queries
+                if parsed_sub_query
+            )
 
-            # parse all the sub_queries
-            for sub_query in query_json["$and"]:
-                result.append(
-                    KeywordSearchView._parse_query(json.dumps(sub_query))
-                )
+        keyword_list = get_keywords_from_keyword_query(query_json)
 
-            return ",".join(result)
-
-        elif len(query_json.keys()) != 0:  # Avoid parsing empty query
+        if not keyword_list and len(query_json.keys()) != 0:
+            # Avoid parsing empty query
             keyword = get_keywords_from_search_operator_query(query_json)
 
             if keyword is not None:
@@ -155,11 +192,30 @@ class KeywordSearchView(ResultsView):
             if query_id is None:
                 # create query
                 query = query_api.create_default_query(request, [])
+                # No template selected == no template restriction == every
+                # test is already included in the results. Pre-check every
+                # box so the pills reflect that from the start, instead of
+                # showing "nothing selected" for a search that actually
+                # covers everything.
+                all_global_templates = [
+                    str(template_version_manager.id)
+                    for template_version_manager in template_version_manager_api.get_active_global_version_manager(
+                        request=request
+                    )
+                ]
+                all_user_templates = [
+                    str(template_version_manager.id)
+                    for template_version_manager in template_version_manager_api.get_active_version_manager_by_user_id(
+                        request=request
+                    )
+                ]
                 # create keyword form
                 # create all data for select values in forms
                 keywords_data_form = {
                     "query_id": str(query.id),
                     "user_id": query.user_id,
+                    "global_templates": all_global_templates,
+                    "user_templates": all_user_templates,
                 }
             else:  # query_id is not None
                 # get the query id
@@ -173,6 +229,12 @@ class KeywordSearchView(ResultsView):
                 version_managers = []
                 for template in query.templates.all():
                     version_managers.append(str(template.version_manager.id))
+                # restore the previously selected workspaces, if any
+                workspace_ids = []
+                if query.data_sources:
+                    workspace_ids = query.data_sources[0].get(
+                        "query_options", {}
+                    ).get("workspaces", [])
                 # create all data for select values in forms
                 keywords_data_form = {
                     "query_id": str(query.id),
@@ -183,6 +245,7 @@ class KeywordSearchView(ResultsView):
                         query
                     ),
                     "user_templates": version_managers,
+                    "workspaces": ",".join(str(w) for w in workspace_ids),
                 }
                 # set the correct ordering for the context
                 if keywords_data_form["order_by_field"] != 0:
@@ -196,7 +259,7 @@ class KeywordSearchView(ResultsView):
 
         search_form = KeywordForm(data=keywords_data_form, request=request)
         return self._format_keyword_search_context(
-            search_form, error, None, default_order
+            search_form, error, None, default_order, request
         )
 
     def _post(self, request):
@@ -228,6 +291,17 @@ class KeywordSearchView(ResultsView):
                     .strip()
                     .split(";")
                 )
+                workspace_ids = []
+                for workspace_id in search_form.cleaned_data.get(
+                    "workspaces", ""
+                ).split(","):
+                    workspace_id = workspace_id.strip()
+                    if not workspace_id:
+                        continue
+                    try:
+                        workspace_ids.append(int(workspace_id))
+                    except ValueError:
+                        workspace_ids.append(workspace_id)
                 # get all template version manager ids
                 template_version_manager_ids = (
                     global_templates + user_templates
@@ -275,6 +349,9 @@ class KeywordSearchView(ResultsView):
                                 query.data_sources[data_sources_index][
                                     "order_by_field"
                                 ] = order_by_field_array[data_sources_index]
+                            query.data_sources[data_sources_index].setdefault(
+                                "query_options", {}
+                            )["workspaces"] = workspace_ids
 
                         query_api.upsert(query, request.user)
             except DoesNotExist:
@@ -293,6 +370,7 @@ class KeywordSearchView(ResultsView):
             error,
             warning,
             search_form.cleaned_data.get("order_by_field", "").strip(),
+            request,
         )
 
     @staticmethod
@@ -317,15 +395,16 @@ class KeywordSearchView(ResultsView):
                             split_keyword[0], split_keyword[1]
                         )
                     )
+                    continue
                 except ApiError:
-                    keyword_list.append(keyword)
-            else:
-                keyword_list.append(keyword)
+                    # Not a registered operator, search it as a plain keyword
+                    pass
 
-        keyword_query = ['"' + keyword + '"' for keyword in keyword_list]
+            keyword_list.append(keyword)
 
-        if len(keyword_query) > 0:
-            keyword_query = {"$text": {"$search": " ".join(keyword_query)}}
+        keyword_query = build_keyword_query(keyword_list)
+
+        if keyword_query:
             main_query.append(keyword_query)
 
         # If the query is empty, match all documents
@@ -365,13 +444,30 @@ class KeywordSearchView(ResultsView):
                     "is_raw": False,
                 },
                 {
+                    "path": "core_explore_keyword_app/user/js/search/template_filter_pills.js",
+                    "is_raw": False,
+                },
+                {
+                    "path": "core_explore_keyword_app/user/js/search/workspace_filter.js",
+                    "is_raw": False,
+                },
+                {
                     "path": "core_explore_keyword_app/user/js/persistent_query.raw.js",
                     "is_raw": True,
+                },
+                {
+                    "path": "core_dashboard_app/common/js/download_workspace.js",
+                    "is_raw": False,
+                },
+                {
+                    "path": "core_main_app/common/js/wait/waiting.js",
+                    "is_raw": False,
                 },
             ],
             "css": [
                 "core_explore_keyword_app/libs/tag-it/2.0/css/jquery.tagit.css",
                 "core_explore_keyword_app/user/css/search/search.css",
+                "core_main_app/common/css/wait/waiting.css"
             ],
         }
 
@@ -392,7 +488,7 @@ class KeywordSearchView(ResultsView):
         return super()._load_modals()
 
     def _format_keyword_search_context(
-        self, search_form, error, warning, query_order=""
+        self, search_form, error, warning, query_order="", request=None
     ):
         """Format the context for the keyword research page
 
@@ -401,10 +497,14 @@ class KeywordSearchView(ResultsView):
             error:
             warning:
             query_order:
+            request:
 
         Returns:
 
         """
+        accessible_workspaces = (
+            _get_accessible_workspaces(request.user) if request else []
+        )
         context = {
             "search_form": search_form,
             "query_id": search_form.data["query_id"],
@@ -415,6 +515,8 @@ class KeywordSearchView(ResultsView):
             "data_sorting_fields": query_order,
             "default_data_sorting_fields": ",".join(DATA_SORTING_FIELDS),
             "query_builder_interface": self.query_builder_interface,
+            "accessible_workspaces": accessible_workspaces,
+            "accessible_workspaces_json": json.dumps(accessible_workspaces),
             "EXPLORE_KEYWORD_APP_EXTRAS_HTML": [
                 path
                 for extra in EXPLORE_KEYWORD_APP_EXTRAS
